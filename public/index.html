@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Routy // Sovereign Mesh</title>
+    <link rel="manifest" href="/manifest.json">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet" />
+    <style>
+        /* --- UNIVERSAL THEME --- */
+        :root {
+            --bg: #F9F9F7; --surface: #ffffff; --text: #1C1C1E; --text-dim: #8E8E93;
+            --accent: #4CAF50; --bloom: rgba(76, 175, 80, 0.15); --border: #E5E5E7;
+            --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+        }
+        [data-theme='dark'] {
+            --bg: #000000; --surface: #1C1C1E; --text: #ffffff; --text-dim: #98989D;
+            --accent: #81C784; --bloom: rgba(129, 199, 132, 0.2); --border: #2C2C2E;
+        }
+        
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; display: flex; flex-direction: column; overflow: hidden; transition: 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        /* --- UI COMPONENTS --- */
+        header { padding: 25px; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        .logo { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
+        
+        /* Search / Intent Bar */
+        .intent-wrap { padding: 0 20px; z-index: 10; }
+        .intent-bar { 
+            width: 100%; padding: 16px 24px; border-radius: 40px; border: 1px solid var(--border);
+            background: var(--surface); color: var(--text); font-size: 1rem; outline: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.02); transition: 0.3s;
+        }
+        .intent-bar:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--bloom); }
+
+        /* The Bloom (Balance) */
+        main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        .bloom-circle { 
+            width: 260px; height: 260px; border-radius: 50%; background: var(--bloom);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            backdrop-filter: blur(10px); animation: breathe 6s ease-in-out infinite;
+        }
+        .val { font-size: 72px; font-weight: 300; letter-spacing: -3px; margin: 0; }
+        .label { font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; margin-top: 10px; }
+
+        /* Actions */
+        .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 30px; z-index: 10; }
+        .btn { 
+            height: 60px; border-radius: 22px; border: none; font-size: 16px; font-weight: 600;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s;
+        }
+        .btn-receive { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+        .btn-give { background: var(--text); color: var(--bg); }
+        .btn:active { transform: scale(0.96); }
+
+        /* Identity Gate */
+        #gate { 
+            position: fixed; inset: 0; background: var(--bg); z-index: 100; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.5s;
+        }
+
+        /* Animations */
+        @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .fade-out { opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <!-- SOVEREIGN GATE (Identity) -->
+    <div id="gate">
+        <div class="bloom-circle" onclick="initIdentity()" style="cursor: pointer; width: 180px; height: 180px; background: var(--surface); border: 1px solid var(--border);">
+            <i class="ri-fingerprint-line" style="font-size: 48px; opacity: 0.4;"></i>
+        </div>
+        <h2 style="margin-top: 30px; font-weight: 500;">Sovereign Node</h2>
+        <p style="color: var(--text-dim); font-size: 14px;">Tap to claim presence</p>
+    </div>
+
+    <header>
+        <div class="logo"><i class="ri-link-m"></i> routy.ai</div>
+        <i class="ri-contrast-line" onclick="toggleTheme()" style="cursor: pointer; font-size: 20px;"></i>
+    </header>
+
+    <div class="intent-wrap">
+        <input type="text" class="intent-bar" id="search" placeholder="Broadcast Intent..." oninput="handleSearch(this.value)">
+    </div>
+
+    <main id="dashboard">
+        <div class="bloom-circle">
+            <div class="val" id="balance">--</div>
+            <div class="label">Goodwill</div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-top: 5px;">Freshness: 98%</div>
+        </div>
+    </main>
+
+    <div class="actions">
+        <button class="btn btn-receive"><i class="ri-qr-code-line"></i> Receive</button>
+        <button class="btn btn-give">Give</button>
+    </div>
+
+    <script>
+        // --- SOVEREIGN LOGIC (The Membrane) ---
+        
+        let db;
+        let myIdentity = null;
+
+        // 1. DATABASE INIT (IndexedDB)
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open("SovereignMesh", 1);
+                req.onupgradeneeded = (e) => {
+                    const d = e.target.result;
+                    if (!d.objectStoreNames.contains('identity')) d.createObjectStore('identity', { keyPath: 'id' });
+                    if (!d.objectStoreNames.contains('ledger')) d.createObjectStore('ledger', { autoIncrement: true });
+                };
+                req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+                req.onerror = reject;
+            });
+        };
+
+        // 2. CRYPTO & IDENTITY
+        async function initIdentity() {
+            // Check if identity exists
+            const tx = db.transaction('identity', 'readonly');
+            const store = tx.objectStore('identity');
+            const req = store.get('root');
+
+            req.onsuccess = async () => {
+                if (req.result) {
+                    // Identity Found
+                    myIdentity = req.result;
+                    unlockGate();
+                } else {
+                    // Generate New Sovereign Identity (P-256)
+                    const keyPair = await window.crypto.subtle.generateKey(
+                        { name: "ECDSA", namedCurve: "P-256" },
+                        true, ["sign", "verify"]
+                    );
+                    const jwkPub = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+                    
+                    const newId = { id: 'root', pub: jwkPub, created: Date.now() };
+                    
+                    const writeTx = db.transaction('identity', 'readwrite');
+                    writeTx.objectStore('identity').add(newId);
+                    
+                    myIdentity = newId;
+                    unlockGate();
+                }
+            };
+        }
+
+        function unlockGate() {
+            const gate = document.getElementById('gate');
+            gate.classList.add('fade-out');
+            calculateBalance();
+        }
+
+        // 3. FLOW LOGIC (Demurrage)
+        async function calculateBalance() {
+            // Mocking ledger data for the genesis view
+            // In production, this sums the 'ledger' store applying decay
+            const now = Date.now();
+            const mockTx = [
+                { amount: 50, time: now - (1000 * 60 * 60 * 24 * 1) }, // 1 day old
+                { amount: 60, time: now } // Fresh
+            ];
+
+            // Decay Formula: V = V0 * e^(-0.05 * days)
+            let total = 0;
+            mockTx.forEach(tx => {
+                const daysOld = (now - tx.time) / (1000 * 60 * 60 * 24);
+                const decayed = tx.amount * Math.exp(-0.05 * daysOld);
+                total += decayed;
+            });
+
+            document.getElementById('balance').innerText = Math.floor(total);
+        }
+
+        // 4. UI LOGIC
+        function toggleTheme() {
+            const h = document.documentElement;
+            h.setAttribute('data-theme', h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+        }
+
+        function handleSearch(q) {
+            // Semantic Intent Broadcast simulation
+            if (q.length > 2) {
+                // In a real P2P mesh, this sends a query to connected peers
+                console.log(`Broadcasting Intent: ${q}`);
+            }
+        }
+
+        // Boot
+        window.onload = async () => {
+            await initDB();
+            // Check for auto-login logic or waiting for interaction
+        };
+    </script>
+</body>
+</html>
